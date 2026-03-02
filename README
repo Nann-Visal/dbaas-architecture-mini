@@ -1,0 +1,82 @@
+sudo useradd -r -s /bin/false proxysql-api
+
+sudo mkdir -p /opt/proxysql-api
+sudo mkdir -p /etc/proxysql-api
+sudo mkdir -p /var/log/proxysql-api
+
+sudo cp proxysql_api.py /opt/proxysql-api/app.py
+
+sudo chown -R proxysql-api:proxysql-api /opt/proxysql-api /var/log/proxysql-api
+
+cd /opt/proxysql-api
+sudo -u proxysql-api python3 -m venv venv
+sudo -u proxysql-api venv/bin/pip install flask pymysql psycopg2-binary
+
+cd /opt/proxysql-api
+sudo -u proxysql-api python3 -m venv venv
+sudo -u proxysql-api venv/bin/pip install flask pymysql psycopg2-binary
+
+sudo nano /etc/proxysql-api/env
+
+
+API_PORT=8080
+API_HOST=127.0.0.1
+PROXYSQL_HOST=127.0.0.1
+PROXYSQL_MYSQL_PORT=6032
+PROXYSQL_PG_PORT=6132
+PROXYSQL_USER=admin
+PROXYSQL_PASS=admin
+
+PYTHONUNBUFFERED=1
+
+
+sudo chmod 600 /etc/proxysql-api/env
+sudo chown proxysql-api:proxysql-api /etc/proxysql-api/env
+
+
+sudo nano /etc/systemd/system/proxysql-api.service
+
+
+[Unit]
+Description=ProxySQL Universal REST API
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxysql-api
+Group=proxysql-api
+WorkingDirectory=/opt/proxysql-api
+
+EnvironmentFile=/etc/proxysql-api/env
+
+ExecStart=/opt/proxysql-api/venv/bin/python /opt/proxysql-api/app.py
+
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/log/proxysql-api
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=proxysql-api
+
+[Install]
+WantedBy=multi-user.target
+
+
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+
+sudo systemctl enable proxysql-api
+sudo systemctl start proxysql-api
+
+sudo systemctl status proxysql-api
+
+curl http://127.0.0.1:8080/health
