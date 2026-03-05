@@ -1,57 +1,166 @@
-sudo useradd -r -s /bin/false proxysql-api
+# proxy-api
 
-sudo mkdir -p /opt/proxysql-api
-sudo mkdir -p /etc/proxysql-api
-sudo mkdir -p /var/log/proxysql-api
+HAProxy Dynamic Config REST API — Installation & Operations Guide
 
-sudo cp proxysql_api.py /opt/proxysql-api/app.py
+---
 
-sudo chown -R proxysql-api:proxysql-api /opt/proxysql-api /var/log/proxysql-api
+## Overview
 
-cd /opt/proxysql-api
-sudo -u proxysql-api python3 -m venv venv
-sudo -u proxysql-api venv/bin/pip install flask pymysql psycopg2-binary
+`proxy-api` is a lightweight Flask-based REST API that manages HAProxy TCP tunnel configurations dynamically. It creates, deletes, and reloads per-port `listen` blocks in HAProxy without downtime, using the HAProxy master socket for zero-disruption reloads.
 
-cd /opt/proxysql-api
-sudo -u proxysql-api python3 -m venv venv
-sudo -u proxysql-api venv/bin/pip install flask pymysql psycopg2-binary
+Each tenant gets a dedicated port mapped to a backend node IP. Configs are written as `listen` blocks in isolated `.cfg` files under `/run/haproxy/tenants/`.
 
-sudo nano /etc/proxysql-api/env
+**Architecture:**
+- Flask API runs as a systemd service under the dedicated `proxy-api` user
+- HAProxy reads tenant configs from `/run/haproxy/tenants/*.cfg` via `conf-dir`
+- Reloads triggered via HAProxy master socket using `socat` — zero dropped connections
+- Rollback on failed reload — config is restored automatically
 
+---
 
+## Prerequisites
+
+| Requirement  | Details                                      |
+|--------------|----------------------------------------------|
+| OS           | Ubuntu 20.04 / 22.04 / Debian 11+            |
+| HAProxy      | 2.4+ with master-worker mode enabled         |
+| Python       | 3.8 or newer                                 |
+| Packages     | socat, python3-venv, python3-pip             |
+| Permissions  | sudo / root access required for setup        |
+
+> **Warning:** HAProxy must be running in master-worker mode with the master socket exposed at `/run/haproxy-master.sock` before starting `proxy-api`.
+
+---
+
+## HAProxy Configuration
+
+Before installing proxy-api, configure HAProxy to support dynamic tenant config loading and expose its master socket.
+
+### Step 1 — Enable master-worker mode
+
+Edit `/etc/haproxy/haproxy.cfg` and add/confirm the global section:
+
+```
+global
+    master-worker
+    stats socket /run/haproxy-master.sock mode 660 level admin expose-fd listeners
+    stats timeout 30s
+
+    # Load tenant configs dynamically
+    conf-dir /run/haproxy/tenants
+```
+
+> The `conf-dir` directive tells HAProxy to include all `.cfg` files in that directory. `proxy-api` writes one file per tenant port into this directory.
+
+### Step 2 — Set socket permissions
+
+```bash
+# Ensure haproxy group exists
+groupadd -f haproxy
+
+# Set socket ownership so proxy-api can send reload commands
+chown root:haproxy /run/haproxy-master.sock
+chmod 660 /run/haproxy-master.sock
+```
+
+### Step 3 — Restart HAProxy
+
+```bash
+systemctl restart haproxy
+systemctl status haproxy
+
+# Verify master socket exists
+ls -la /run/haproxy-master.sock
+```
+
+---
+
+## Installation
+
+### Step 1 — Install system dependencies
+
+```bash
+apt-get update
+apt-get install -y socat python3 python3-venv python3-pip
+```
+
+### Step 2 — Create system user and directories
+
+```bash
+# Dedicated unprivileged service user
+useradd -r -s /bin/false proxy-api
+
+mkdir -p /opt/proxy-api
+mkdir -p /etc/proxy-api
+mkdir -p /var/log/proxy-api
+
+chown -R proxy-api:proxy-api /opt/proxy-api /var/log/proxy-api
+```
+
+### Step 3 — Deploy application
+
+```bash
+cp proxysql_api.py /opt/proxy-api/app.py
+
+chown proxy-api:proxy-api /opt/proxy-api/app.py
+chmod 644 /opt/proxy-api/app.py
+```
+
+### Step 4 — Set up Python virtual environment
+
+```bash
+cd /opt/proxy-api
+sudo -u proxy-api python3 -m venv venv
+sudo -u proxy-api venv/bin/pip install --upgrade pip
+sudo -u proxy-api venv/bin/pip install flask pymysql psycopg2-binary
+```
+
+### Step 5 — Create tenant config directory
+
+```bash
+mkdir -p /run/haproxy/tenants
+
+# Add proxy-api to haproxy group so it can write configs and use the socket
+usermod -aG haproxy proxy-api
+
+chown proxy-api:haproxy /run/haproxy/tenants
+chmod 775 /run/haproxy/tenants
+
+# Persist directory across reboots (tmpfs is cleared on boot)
+tee /etc/tmpfiles.d/haproxy-tenants.conf > /dev/null <<EOF
+d /run/haproxy/tenants 0775 proxy-api haproxy -
+EOF
+```
+
+### Step 6 — Create environment file
+
+```bash
+tee /etc/proxy-api/env > /dev/null <<EOF
 API_PORT=8080
-API_HOST=127.0.0.1
-PROXYSQL_HOST=127.0.0.1
-PROXYSQL_MYSQL_PORT=6032
-PROXYSQL_PG_PORT=6132
-PROXYSQL_USER=admin
-PROXYSQL_PASS=admin
-
+API_HOST=0.0.0.0
 PYTHONUNBUFFERED=1
+EOF
 
+chmod 600 /etc/proxy-api/env
+chown proxy-api:proxy-api /etc/proxy-api/env
+```
 
-sudo chmod 600 /etc/proxysql-api/env
-sudo chown proxysql-api:proxysql-api /etc/proxysql-api/env
+### Step 7 — Install systemd service
 
-
-sudo nano /etc/systemd/system/proxysql-api.service
-
-
+```bash
+tee /etc/systemd/system/proxy-api.service > /dev/null <<EOF
 [Unit]
-Description=ProxySQL Universal REST API
+Description=HAProxy Dynamic Config REST API (proxy-api)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=proxysql-api
-Group=proxysql-api
-WorkingDirectory=/opt/proxysql-api
-
-EnvironmentFile=/etc/proxysql-api/env
-
-ExecStart=/opt/proxysql-api/venv/bin/python /opt/proxysql-api/app.py
-
+User=proxy-api
+Group=proxy-api
+WorkingDirectory=/opt/proxy-api
+EnvironmentFile=/etc/proxy-api/env
+ExecStart=/opt/proxy-api/venv/bin/python /opt/proxy-api/app.py
 Restart=always
 RestartSec=5
 
@@ -60,23 +169,163 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/var/log/proxysql-api
+ReadWritePaths=/var/log/proxy-api
 
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=proxysql-api
+SyslogIdentifier=proxy-api
 
 [Install]
 WantedBy=multi-user.target
+EOF
+```
 
+### Step 8 — Enable and start the service
 
-sudo systemctl daemon-reexec
-sudo systemctl daemon-reload
+```bash
+systemctl daemon-reload
+systemctl enable proxy-api
+systemctl start proxy-api
+systemctl status proxy-api
+```
 
-sudo systemctl enable proxysql-api
-sudo systemctl start proxysql-api
+### Step 9 — Verify installation
 
-sudo systemctl status proxysql-api
-
+```bash
 curl http://127.0.0.1:8080/health
+
+# Expected response:
+# {"message": "HAProxy config API is healthy", "status": "ok"}
+```
+
+---
+
+## API Reference
+
+Base URL: `http://<server-ip>:8080`
+
+| Method   | Endpoint            | Description                       | Required Fields          |
+|----------|---------------------|-----------------------------------|--------------------------|
+| GET      | /health             | Health check                      | —                        |
+| GET      | /haproxy/configs    | List all active tenant configs    | —                        |
+| POST     | /haproxy/config     | Create config & reload HAProxy    | port, node_ip, db_port   |
+| DELETE   | /haproxy/config     | Delete config & reload HAProxy    | port                     |
+| POST     | /haproxy/reload     | Manually trigger HAProxy reload   | —                        |
+
+---
+
+### POST /haproxy/config — Create Tunnel
+
+Creates a new HAProxy `listen` block that forwards the given port to the target node.
+
+**Request body:**
+```json
+{
+  "port":    3307,
+  "node_ip": "10.0.0.5",
+  "db_port": 3306
+}
+```
+
+> **All three fields are required. There is no default for `db_port` — omitting any field returns a 400 error.**
+
+**Generated HAProxy config:**
+```
+listen node_3307
+    bind *:3307
+    mode tcp
+    option tcplog
+    server db1 10.0.0.5:3306 check
+```
+
+**Success response (200):**
+```json
+{
+  "status": "ok",
+  "message": "HAProxy config for port 3307 created and reloaded (-> 10.0.0.5:3306)"
+}
+```
+
+---
+
+### DELETE /haproxy/config — Remove Tunnel
+
+Removes the config for the specified port and reloads HAProxy. Rolls back automatically if reload fails.
+
+**Request body:**
+```json
+{
+  "port": 3307
+}
+```
+
+---
+
+### GET /haproxy/configs — List Active Tunnels
+
+```json
+{
+  "status": "ok",
+  "message": "success",
+  "data": ["3307.cfg", "3308.cfg", "5433.cfg"]
+}
+```
+
+---
+
+## Operations
+
+**View live logs:**
+```bash
+journalctl -u proxy-api -f
+journalctl -u proxy-api -n 100
+```
+
+**Restart service:**
+```bash
+systemctl restart proxy-api
+```
+
+**Check active tenant configs:**
+```bash
+ls -la /run/haproxy/tenants/
+cat /run/haproxy/tenants/3307.cfg
+```
+
+**Manual HAProxy reload:**
+```bash
+# Via API
+curl -X POST http://127.0.0.1:8080/haproxy/reload
+
+# Directly via socket
+echo 'reload' | socat stdio /run/haproxy-master.sock
+```
+
+**Rollback behaviour:**
+If an HAProxy reload fails after a config change, `proxy-api` automatically restores the previous config before returning a 500 error. No manual intervention is needed.
+
+---
+
+## Troubleshooting
+
+| Problem                              | Fix                                                                                              |
+|--------------------------------------|--------------------------------------------------------------------------------------------------|
+| Reload failed: permission denied     | Run `usermod -aG haproxy proxy-api` then restart the service                                    |
+| Socket not found                     | HAProxy is not in master-worker mode or socket path is wrong. Check `/run/haproxy-master.sock`  |
+| Tenant dir missing after reboot      | Ensure `/etc/tmpfiles.d/haproxy-tenants.conf` exists, then run `systemd-tmpfiles --create`      |
+| db_port missing field error          | `db_port` is required with no default — always pass all three fields: `port`, `node_ip`, `db_port` |
+| Port already in use                  | A config for that port already exists. DELETE it first, or POST again to overwrite              |
+
+---
+
+## File Reference
+
+| Path                                        | Description                                  |
+|---------------------------------------------|----------------------------------------------|
+| `/opt/proxy-api/app.py`                     | Main Flask application                       |
+| `/etc/proxy-api/env`                        | Environment variables (API_PORT, API_HOST)   |
+| `/etc/systemd/system/proxy-api.service`     | Systemd service unit                         |
+| `/run/haproxy/tenants/<port>.cfg`           | Per-tenant HAProxy listen block              |
+| `/etc/tmpfiles.d/haproxy-tenants.conf`      | Ensures tenant dir is recreated on boot      |
+| `/var/log/proxy-api/`                       | Log directory (journald is primary)          |

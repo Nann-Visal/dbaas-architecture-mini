@@ -3,27 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ProxySQL Universal REST API</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Cabinet+Grotesk:wght@400;500;700;800&family=Instrument+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<title>HAProxy Config REST API</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #080a0f;
-  --s1: #0e1118;
-  --s2: #141720;
-  --s3: #1c2030;
-  --br: #1e2438;
-  --br2: #2a3050;
-  --mysql: #00b4d8;
-  --mysql-dim: rgba(0,180,216,0.1);
-  --pg: #f7a600;
-  --pg-dim: rgba(247,166,0,0.1);
-  --admin: #7c3aed;
-  --admin-dim: rgba(124,58,237,0.1);
-  --green: #10b981;
+  --bg: #07090e;
+  --s1: #0c0f18;
+  --s2: #111520;
+  --s3: #181d2e;
+  --br: #1d2235;
+  --br2: #252d45;
+  --accent: #3b82f6;
+  --accent-dim: rgba(59,130,246,0.1);
+  --accent-glow: rgba(59,130,246,0.25);
+  --green: #22c55e;
+  --green-dim: rgba(34,197,94,0.1);
   --red: #f43f5e;
-  --text: #dde3f0;
-  --sub: #7a8499;
-  --code: #0a0c13;
+  --red-dim: rgba(244,63,94,0.1);
+  --amber: #f59e0b;
+  --amber-dim: rgba(245,158,11,0.1);
+  --purple: #a78bfa;
+  --text: #e2e8f8;
+  --sub: #64748b;
+  --muted: #3d4a66;
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -31,423 +33,666 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Instrument Sans', sans-serif;
-  font-size: 14px;
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
   line-height: 1.7;
+  min-height: 100vh;
 }
 
-/* ── Layout ── */
-.wrap { display:flex; min-height:100vh; }
+/* grid noise overlay */
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events:none; z-index:0;
+}
 
+.wrap { display:flex; min-height:100vh; position:relative; z-index:1; }
+
+/* ── Sidebar ── */
 aside {
-  width: 270px;
-  min-width: 270px;
+  width: 260px;
+  min-width: 260px;
   background: var(--s1);
   border-right: 1px solid var(--br);
   height: 100vh;
   position: sticky;
   top: 0;
   overflow-y: auto;
-  padding: 0 0 40px;
+  padding-bottom: 40px;
 }
 
-main { flex:1; max-width:920px; padding: 52px 60px; }
-
-/* ── Sidebar ── */
 .sb-head {
-  padding: 28px 22px 22px;
+  padding: 24px 20px;
   border-bottom: 1px solid var(--br);
-  margin-bottom: 10px;
 }
 
-.sb-logo {
-  display: flex; align-items: center; gap: 10px;
-  font-family: 'Cabinet Grotesk', sans-serif;
-  font-weight: 800; font-size: 17px;
+.logo-row {
+  display:flex; align-items:center; gap:10px;
+  margin-bottom: 6px;
 }
 
-.sb-logo .pill {
-  background: var(--mysql); width:10px; height:10px;
+.logo-icon {
+  width: 28px; height: 28px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: 6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size: 13px;
+}
+
+.logo-text {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--text);
+  letter-spacing: -.02em;
+}
+
+.logo-sub {
+  font-size: 10px;
+  color: var(--sub);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.version-badge {
+  display: inline-flex; align-items:center; gap:5px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  color: var(--accent);
+  font-size: 9.5px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  margin-top: 8px;
+  letter-spacing: .06em;
+}
+
+.version-badge::before {
+  content:'';
+  width:5px; height:5px;
+  background: var(--accent);
   border-radius:50%;
-  box-shadow: 0 0 10px var(--mysql);
-  animation: blink 2.4s ease-in-out infinite;
+  animation: pulse 2s infinite;
 }
 
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-.sb-ver {
-  font-size:10px; color:var(--sub); margin-top:4px;
-  text-transform:uppercase; letter-spacing:.1em;
-  font-family:'IBM Plex Mono', monospace;
+.nav-section {
+  padding: 16px 0 4px;
 }
 
-.nav-grp { margin-bottom: 2px; }
-
-.nav-lbl {
-  font-size: 9.5px; text-transform: uppercase;
-  letter-spacing: .14em; color: var(--sub);
-  padding: 10px 22px 3px;
-  font-weight: 600;
+.nav-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+  color: var(--muted);
+  padding: 0 20px 6px;
+  font-weight: 500;
 }
 
-.nav-lbl.mysql { color: var(--mysql); }
-.nav-lbl.pg    { color: var(--pg); }
-.nav-lbl.adm   { color: var(--admin); }
-
-a.nav-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 22px;
+a.nav-link {
+  display:flex; align-items:center; gap:8px;
+  padding: 5px 20px;
+  color: var(--sub);
   text-decoration: none;
-  color: #6b7896; font-size: 13px;
+  font-size: 12px;
   border-left: 2px solid transparent;
-  transition: all .15s;
+  transition: all .12s;
 }
 
-a.nav-item:hover { color: var(--text); background: rgba(255,255,255,.03); }
-a.nav-item.active { color: var(--text); border-left-color: var(--mysql); }
-a.nav-item.pg-active { color: var(--text); border-left-color: var(--pg); }
-a.nav-item.adm-active { color: var(--text); border-left-color: var(--admin); }
+a.nav-link:hover { color: var(--text); background: rgba(255,255,255,.02); }
+a.nav-link.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+
+.nav-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+a.nav-link.active .nav-dot { background: var(--accent); }
+
+/* ── Main ── */
+main {
+  flex: 1;
+  max-width: 860px;
+  padding: 56px 56px 80px;
+}
 
 /* ── Hero ── */
 .hero {
-  margin-bottom: 48px;
-  padding-bottom: 36px;
+  margin-bottom: 60px;
+  padding-bottom: 48px;
   border-bottom: 1px solid var(--br);
 }
 
-.tag {
-  display:inline-flex; align-items:center; gap:6px;
-  font-family:'IBM Plex Mono',monospace; font-size:10.5px;
-  padding:3px 10px; border-radius:4px; margin-bottom:18px;
+.hero-eyebrow {
+  display:flex; align-items:center; gap:8px;
+  margin-bottom: 20px;
 }
 
-.tag.mysql-tag { background:var(--mysql-dim); border:1px solid rgba(0,180,216,.25); color:var(--mysql); }
-.tag.pg-tag    { background:var(--pg-dim);    border:1px solid rgba(247,166,0,.25);  color:var(--pg); }
+.eyebrow-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.tag-tcp  { background:var(--accent-dim); color:var(--accent); border:1px solid var(--accent-glow); }
+.tag-ha   { background:var(--green-dim);  color:var(--green);  border:1px solid rgba(34,197,94,.25); }
 
 .hero h1 {
-  font-family:'Cabinet Grotesk',sans-serif;
-  font-weight:800; font-size:38px; line-height:1.1;
-  margin-bottom:14px;
-  background: linear-gradient(130deg, #dde3f0 20%, #4a5578);
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 42px;
+  line-height: 1.05;
+  letter-spacing: -.03em;
+  margin-bottom: 16px;
+  color: var(--text);
 }
 
-.hero p { color:var(--sub); font-size:15px; max-width:580px; }
-
-/* ── Install banner ── */
-.install-grid {
-  display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:18px 0;
+.hero h1 em {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  color: var(--accent);
 }
 
-/* ── Sections ── */
-section { margin-bottom:50px; }
-
-h2 {
-  font-family:'Cabinet Grotesk',sans-serif;
-  font-weight:700; font-size:20px; color:var(--text);
-  display:flex; align-items:center; gap:10px; margin-bottom:14px;
+.hero-desc {
+  color: var(--sub);
+  font-size: 14px;
+  line-height: 1.8;
+  max-width: 540px;
+  font-family: 'DM Mono', monospace;
 }
 
-h2 .badge {
-  font-family:'IBM Plex Mono',monospace; font-size:9px;
-  padding:2px 8px; border-radius:3px; font-weight:600;
-  letter-spacing:.07em; text-transform:uppercase;
+.hero-meta {
+  display:flex; gap:24px; margin-top:24px;
 }
 
-.mysql-badge { background:var(--mysql-dim); color:var(--mysql); border:1px solid rgba(0,180,216,.25); }
-.pg-badge    { background:var(--pg-dim);    color:var(--pg);    border:1px solid rgba(247,166,0,.25); }
-.adm-badge   { background:var(--admin-dim); color:var(--admin); border:1px solid rgba(124,58,237,.25); }
-
-h3 {
-  font-family:'Cabinet Grotesk',sans-serif;
-  font-size:14px; font-weight:700; color:var(--text);
-  margin:22px 0 8px;
+.meta-item {
+  display:flex; flex-direction:column; gap:2px;
 }
 
-p { color:var(--sub); margin-bottom:12px; }
+.meta-label { font-size: 9px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted); }
+.meta-val   { font-size: 13px; color: var(--text); font-weight:500; }
+
+/* ── Section ── */
+section { margin-bottom: 56px; }
+
+.section-header {
+  display:flex; align-items:center; gap:12px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--br);
+}
+
+.section-header h2 {
+  font-family: 'Syne', sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -.02em;
+  color: var(--text);
+}
+
+.s-badge {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+}
 
 /* ── Endpoint card ── */
-.ep-card {
-  background:var(--s1);
-  border:1px solid var(--br);
-  border-radius:10px;
-  overflow:hidden;
-  margin-bottom:20px;
+.ep {
+  border: 1px solid var(--br);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  transition: border-color .15s;
 }
 
-.ep-header {
+.ep:hover { border-color: var(--br2); }
+
+.ep-top {
   display:flex; align-items:center; justify-content:space-between;
-  padding:11px 16px;
-  background:var(--s2);
-  border-bottom:1px solid var(--br);
+  padding: 10px 14px;
+  background: var(--s2);
+  border-bottom: 1px solid var(--br);
+  cursor: pointer;
 }
 
-.ep-title { display:flex; align-items:center; gap:10px; }
+.ep-left { display:flex; align-items:center; gap:10px; }
 
 .method {
-  font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
-  padding:2px 8px; border-radius:4px; letter-spacing:.05em;
-  min-width:52px; text-align:center;
+  font-size: 9.5px; font-weight: 700;
+  padding: 2px 8px; border-radius: 3px;
+  letter-spacing: .07em; min-width:54px; text-align:center;
+  font-family: 'DM Mono', monospace;
 }
 
-.GET    { background:rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.3); }
-.POST   { background:rgba(0,180,216,.15);  color:#00b4d8; border:1px solid rgba(0,180,216,.3); }
-.PUT    { background:rgba(247,166,0,.15);  color:#f7a600; border:1px solid rgba(247,166,0,.3); }
-.DELETE { background:rgba(244,63,94,.15);  color:#f43f5e; border:1px solid rgba(244,63,94,.3); }
+.GET    { background:var(--green-dim); color:var(--green); border:1px solid rgba(34,197,94,.3); }
+.POST   { background:var(--accent-dim); color:var(--accent); border:1px solid rgba(59,130,246,.3); }
+.DELETE { background:var(--red-dim); color:var(--red); border:1px solid rgba(244,63,94,.3); }
 
 .ep-path {
-  font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ep-desc-inline {
+  font-size: 11px;
+  color: var(--sub);
+  margin-left: 4px;
 }
 
 .copy-btn {
-  background:none; border:1px solid var(--br2); color:var(--sub);
-  font-family:'IBM Plex Mono',monospace; font-size:10px;
-  padding:2px 8px; border-radius:4px; cursor:pointer; transition:all .15s;
+  background: none;
+  border: 1px solid var(--br2);
+  color: var(--sub);
+  font-family: 'DM Mono', monospace;
+  font-size: 9.5px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all .12s;
+  letter-spacing: .04em;
 }
 
-.copy-btn:hover { border-color:var(--mysql); color:var(--mysql); }
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+.copy-btn.copied { border-color: var(--green); color: var(--green); }
 
-.ep-body { padding:14px 16px; }
-.ep-desc { color:var(--sub); font-size:13px; margin-bottom:12px; }
-
-/* ── Code ── */
-.code-block {
-  background:var(--code);
-  border:1px solid var(--br);
-  border-radius:8px;
-  overflow:hidden; margin:10px 0;
+.ep-body {
+  padding: 14px 16px;
+  background: var(--s1);
 }
 
-.cb-head {
+/* ── Code block ── */
+.cb {
+  background: var(--bg);
+  border: 1px solid var(--br);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.cb-top {
   display:flex; align-items:center; justify-content:space-between;
-  padding:7px 14px;
-  background:var(--s2);
-  border-bottom:1px solid var(--br);
-  font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--sub);
+  padding: 6px 12px;
+  background: var(--s2);
+  border-bottom: 1px solid var(--br);
+}
+
+.cb-lang {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
 }
 
 pre {
-  padding:14px 16px;
-  overflow-x:auto;
-  font-family:'IBM Plex Mono',monospace;
-  font-size:12.5px; line-height:1.75;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text);
 }
 
-.kw  { color:#818cf8; }
-.str { color:#34d399; }
-.num { color:#fb923c; }
-.cmt { color:#374151; font-style:italic; }
-.key { color:#f472b6; }
-.val { color:var(--text); }
+.str { color: #86efac; }
+.num { color: #fb923c; }
+.key { color: #93c5fd; }
+.cmt { color: var(--muted); font-style:italic; }
+.kw  { color: var(--purple); }
 
 /* ── Param table ── */
 .pt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 10px 0;
+  border: 1px solid var(--br);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pt th {
+  text-align: left;
+  padding: 7px 12px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--muted);
+  background: var(--s2);
+  border-bottom: 1px solid var(--br);
+  font-weight: 600;
+}
+
+.pt td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--br);
+  color: var(--sub);
+  vertical-align: top;
+}
+
+.pt tr:last-child td { border-bottom: none; }
+.pt tr:hover td { background: rgba(255,255,255,.01); }
+
+.pn   { color: var(--text) !important; font-family:'DM Mono',monospace; }
+.pt-t { color: var(--accent) !important; }
+.req  { color: var(--red) !important; font-size:9px; font-weight:700; letter-spacing:.05em; }
+.opt  { color: var(--muted) !important; font-size:9px; }
+
+/* ── Info box ── */
+.info {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--sub);
+  margin: 10px 0;
+  display:flex; gap:8px;
+}
+
+.info-icon { color: var(--accent); flex-shrink:0; }
+
+/* ── Steps ── */
+.steps { display:flex; flex-direction:column; gap:0; }
+
+.step {
+  display:flex; gap:16px;
+  position:relative;
+}
+
+.step:not(:last-child)::after {
+  content:'';
+  position:absolute;
+  left: 13px; top: 30px; bottom: 0;
+  width: 1px;
+  background: var(--br);
+}
+
+.step-num {
+  width: 28px; height: 28px; min-width:28px;
+  background: var(--s2);
+  border: 1px solid var(--br);
+  border-radius: 6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 700;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.step-body { flex:1; padding-bottom: 24px; }
+
+.step-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+/* ── Response grid ── */
+.resp-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  margin: 8px 0;
+}
+
+/* ── All endpoints table ── */
+.all-ep {
   width:100%; border-collapse:collapse;
-  font-size:12.5px; margin:10px 0;
-  background:var(--s1);
+  font-size:12px;
   border:1px solid var(--br);
   border-radius:8px; overflow:hidden;
 }
 
-.pt th {
+.all-ep th {
   text-align:left; padding:8px 12px;
-  font-size:10px; font-weight:600;
-  text-transform:uppercase; letter-spacing:.1em;
-  color:var(--sub);
-  background:var(--s2);
+  font-size:9px; text-transform:uppercase; letter-spacing:.12em;
+  color:var(--muted); background:var(--s2);
   border-bottom:1px solid var(--br);
 }
 
-.pt td {
+.all-ep td {
   padding:8px 12px;
-  border-bottom:1px solid rgba(30,36,56,.6);
+  border-bottom:1px solid var(--br);
   color:var(--sub);
 }
 
-.pt tr:last-child td { border-bottom:none; }
-.pt tr:hover td { background:rgba(255,255,255,.015); }
-.pn { font-family:'IBM Plex Mono',monospace; color:var(--text) !important; }
-.pt-type { color:var(--mysql) !important; font-family:'IBM Plex Mono',monospace; }
-.pt-req  { color:var(--red) !important; font-size:10px; font-weight:600; }
-.pt-opt  { color:var(--sub) !important; font-size:10px; }
-
-/* ── Info/warn boxes ── */
-.info-box, .warn-box {
-  border-radius:8px; padding:12px 16px; margin:12px 0;
-  font-size:13px; display:flex; gap:10px; align-items:flex-start;
-  color:var(--sub);
-}
-
-.info-box { background:rgba(0,180,216,.07); border:1px solid rgba(0,180,216,.2); }
-.warn-box { background:rgba(247,166,0,.07); border:1px solid rgba(247,166,0,.2); }
-.info-box .ic { color:var(--mysql); }
-.warn-box .ic { color:var(--pg); }
+.all-ep tr:last-child td { border-bottom:none; }
+.all-ep tr:hover td { background:rgba(255,255,255,.01); }
+.all-ep .path { font-family:'DM Mono',monospace; color:var(--text); font-size:12px; }
 
 code {
-  font-family:'IBM Plex Mono',monospace; font-size:12px;
+  font-family:'DM Mono',monospace; font-size:11px;
   background:var(--s3); border:1px solid var(--br);
-  padding:1px 6px; border-radius:4px; color:#c084fc;
+  padding:1px 6px; border-radius:3px; color:var(--purple);
 }
 
-/* ── Endpoint table ── */
-.ep-table {
-  width:100%; border-collapse:collapse; font-size:13px;
-  background:var(--s1); border:1px solid var(--br); border-radius:10px; overflow:hidden;
-}
-
-.ep-table th {
-  text-align:left; padding:10px 14px;
-  font-size:9.5px; font-weight:600; text-transform:uppercase; letter-spacing:.1em;
-  color:var(--sub); background:var(--s2); border-bottom:1px solid var(--br);
-}
-
-.ep-table td {
-  padding:10px 14px;
-  border-bottom:1px solid rgba(30,36,56,.5);
-  vertical-align:middle;
-}
-
-.ep-table tr:last-child td { border-bottom:none; }
-.ep-table tr:hover td { background:rgba(255,255,255,.015); }
-.ep-table .path { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text); }
-.ep-table .desc { color:var(--sub); }
-
-/* setup steps */
-.steps { display:flex; flex-direction:column; }
-.step { display:flex; gap:18px; position:relative; }
-.step:not(:last-child)::after {
-  content:''; position:absolute; left:14px; top:32px; bottom:-8px;
-  width:1px; background:var(--br);
-}
-
-.sn {
-  width:30px; height:30px; min-width:30px;
-  background:var(--s2); border:1px solid var(--br);
-  border-radius:7px; display:flex; align-items:center; justify-content:center;
-  font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mysql);
-  font-weight:600; margin-top:1px;
-}
-
-.sb { flex:1; padding-bottom:24px; }
-.sb h4 {
-  font-family:'Cabinet Grotesk',sans-serif;
-  font-size:13.5px; font-weight:700; color:var(--text); margin-bottom:6px;
-}
-
-/* scrollbar */
-::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar { width:4px; height:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:var(--br2); border-radius:3px; }
+::-webkit-scrollbar-thumb { background:var(--br2); border-radius:2px; }
 
-@media(max-width:768px) {
+@media(max-width:768px){
   aside { display:none; }
   main  { padding:28px 20px; }
-  .install-grid { grid-template-columns:1fr; }
+  .resp-grid { grid-template-columns:1fr; }
 }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<!-- ── Sidebar ── -->
+<!-- Sidebar -->
 <aside>
   <div class="sb-head">
-    <div class="sb-logo"><span class="pill"></span> ProxySQL API</div>
-    <div class="sb-ver">v3.0.5 · MySQL + PostgreSQL</div>
+    <div class="logo-row">
+      <div class="logo-icon">⚡</div>
+      <div class="logo-text">HAProxy API</div>
+    </div>
+    <div class="logo-sub">Config REST Service</div>
+    <div class="version-badge">v1.0 · TCP Proxy</div>
   </div>
 
-  <div class="nav-grp">
-    <div class="nav-lbl">Getting Started</div>
-    <a class="nav-item" href="#overview">Overview</a>
-    <a class="nav-item" href="#install">Installation</a>
-    <a class="nav-item" href="#config">Configuration</a>
+  <div class="nav-section">
+    <div class="nav-label">Getting Started</div>
+    <a class="nav-link active" href="#overview"><span class="nav-dot"></span>Overview</a>
+    <a class="nav-link" href="#install"><span class="nav-dot"></span>Installation</a>
+    <a class="nav-link" href="#config"><span class="nav-dot"></span>Configuration</a>
   </div>
 
-  <div class="nav-grp">
-    <div class="nav-lbl mysql">MySQL API</div>
-    <a class="nav-item" href="#mysql-servers">Servers</a>
-    <a class="nav-item" href="#mysql-users">Users</a>
-    <a class="nav-item" href="#mysql-rules">Query Rules</a>
-    <a class="nav-item" href="#mysql-rep">Replication HG</a>
-    <a class="nav-item" href="#mysql-vars">Variables</a>
-    <a class="nav-item" href="#mysql-stats">Stats</a>
+  <div class="nav-section">
+    <div class="nav-label">Endpoints</div>
+    <a class="nav-link" href="#health"><span class="nav-dot"></span>Health Check</a>
+    <a class="nav-link" href="#list"><span class="nav-dot"></span>List Configs</a>
+    <a class="nav-link" href="#create"><span class="nav-dot"></span>Create Config</a>
+    <a class="nav-link" href="#delete"><span class="nav-dot"></span>Delete Config</a>
   </div>
 
-  <div class="nav-grp">
-    <div class="nav-lbl pg">PostgreSQL API</div>
-    <a class="nav-item" href="#pgsql-servers">Servers</a>
-    <a class="nav-item" href="#pgsql-users">Users</a>
-    <a class="nav-item" href="#pgsql-monitor">Monitor Config</a>
-    <a class="nav-item" href="#pgsql-vars">Variables</a>
-    <a class="nav-item" href="#pgsql-stats">Stats</a>
-  </div>
-
-  <div class="nav-grp">
-    <div class="nav-lbl adm">Admin</div>
-    <a class="nav-item" href="#admin-vars">Variables</a>
-    <a class="nav-item" href="#admin-save">Save / Load All</a>
-    <a class="nav-item" href="#health">Health Check</a>
-    <a class="nav-item" href="#all-endpoints">All Endpoints</a>
+  <div class="nav-section">
+    <div class="nav-label">Reference</div>
+    <a class="nav-link" href="#responses"><span class="nav-dot"></span>Response Format</a>
+    <a class="nav-link" href="#all-endpoints"><span class="nav-dot"></span>All Endpoints</a>
   </div>
 </aside>
 
-<!-- ── Main ── -->
+<!-- Main -->
 <main>
 
 <!-- Hero -->
 <div class="hero" id="overview">
-  <div style="display:flex;gap:8px;margin-bottom:18px">
-    <span class="tag mysql-tag">● MySQL Admin :6032</span>
-    <span class="tag pg-tag">● PgSQL Admin :6132</span>
+  <div class="hero-eyebrow">
+    <span class="eyebrow-tag tag-tcp">TCP Proxy</span>
+    <span class="eyebrow-tag tag-ha">HAProxy</span>
   </div>
-  <h1>ProxySQL Universal<br>REST API</h1>
-  <p>A single Flask service that wraps both ProxySQL admin interfaces — MySQL (port 6032) and PostgreSQL (port 6132) — exposing clean HTTP endpoints for full server, user, and configuration management. No direct console access needed.</p>
+  <h1>HAProxy Config<br><em>REST API</em></h1>
+  <p class="hero-desc">A lightweight Flask service that dynamically manages HAProxy TCP frontend/backend configs per port. Create and delete per-tenant MySQL proxy configs via HTTP — HAProxy reloads instantly via admin socket with zero downtime.</p>
+  <div class="hero-meta">
+    <div class="meta-item">
+      <span class="meta-label">Default Port</span>
+      <span class="meta-val">:8080</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Config Dir</span>
+      <span class="meta-val">/run/haproxy/tenants</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Reload Method</span>
+      <span class="meta-val">Admin Socket</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Backend Port</span>
+      <span class="meta-val">MySQL :3306</span>
+    </div>
+  </div>
 </div>
 
 <!-- Install -->
 <section id="install">
-  <h2>Installation <span class="badge mysql-badge">setup</span></h2>
+  <div class="section-header">
+    <h2>Installation</h2>
+    <span class="s-badge" style="background:var(--green-dim);color:var(--green);border:1px solid rgba(34,197,94,.25)">setup</span>
+  </div>
+
   <div class="steps">
     <div class="step">
-      <div class="sn">01</div>
-      <div class="sb">
-        <h4>Install dependencies</h4>
-        <div class="code-block">
-          <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>pip install flask pymysql psycopg2-binary</pre>
+      <div class="step-num">01</div>
+      <div class="step-body">
+        <div class="step-title">Create system user &amp; directories</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>sudo useradd -r -s /bin/false proxysql-api
+sudo mkdir -p /opt/proxysql-api /etc/proxysql-api /var/log/proxysql-api
+sudo mkdir -p /run/haproxy/tenants
+sudo chown proxysql-api:haproxy /run/haproxy/tenants
+sudo chmod 775 /run/haproxy/tenants</pre>
         </div>
       </div>
     </div>
+
     <div class="step">
-      <div class="sn">02</div>
-      <div class="sb">
-        <h4>Deploy the API</h4>
-        <div class="code-block">
-          <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>sudo mkdir -p /opt/proxysql-api
-sudo cp app.py /opt/proxysql-api/</pre>
+      <div class="step-num">02</div>
+      <div class="step-body">
+        <div class="step-title">Deploy app &amp; install dependencies</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>sudo cp app.py /opt/proxysql-api/app.py
+sudo chown -R proxysql-api:proxysql-api /opt/proxysql-api /var/log/proxysql-api
+cd /opt/proxysql-api
+sudo -u proxysql-api python3 -m venv venv
+sudo -u proxysql-api venv/bin/pip install flask
+sudo apt-get install -y socat</pre>
         </div>
       </div>
     </div>
+
     <div class="step">
-      <div class="sn">03</div>
-      <div class="sb">
-        <h4>Install systemd service &amp; start</h4>
-        <div class="code-block">
-          <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>sudo cp proxysql-api.service /etc/systemd/system/
+      <div class="step-num">03</div>
+      <div class="step-body">
+        <div class="step-title">Add proxysql-api to haproxy group (for socket access)</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>sudo usermod -aG haproxy proxysql-api
+sudo usermod -aG haproxy proxyer</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">04</div>
+      <div class="step-body">
+        <div class="step-title">Persist tenants dir across reboots</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>echo 'd /run/haproxy/tenants 0775 proxysql-api haproxy -' \
+  | sudo tee /etc/tmpfiles.d/haproxy-tenants.conf</pre>
+        </div>
+        <div class="info">
+          <span class="info-icon">ℹ</span>
+          <span><code>/run</code> is a tmpfs and resets on reboot. This rule recreates the directory automatically on every boot.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">05</div>
+      <div class="step-body">
+        <div class="step-title">Point HAProxy at the tenants directory</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">/etc/default/haproxy</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>CONFIG="/etc/haproxy/haproxy.cfg -f /run/haproxy/tenants"</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">06</div>
+      <div class="step-body">
+        <div class="step-title">Create environment file</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>sudo tee /etc/proxysql-api/env > /dev/null &lt;&lt;EOF
+API_PORT=8080
+API_HOST=0.0.0.0
+PYTHONUNBUFFERED=1
+EOF
+sudo chmod 600 /etc/proxysql-api/env
+sudo chown proxysql-api:proxysql-api /etc/proxysql-api/env</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">07</div>
+      <div class="step-body">
+        <div class="step-title">Create &amp; start systemd service</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+          <pre>sudo tee /etc/systemd/system/proxysql-api.service > /dev/null &lt;&lt;EOF
+[Unit]
+Description=HAProxy Config REST API
+After=network.target haproxy.service
+
+[Service]
+Type=simple
+User=proxysql-api
+Group=proxysql-api
+WorkingDirectory=/opt/proxysql-api
+EnvironmentFile=/etc/proxysql-api/env
+ExecStart=/opt/proxysql-api/venv/bin/python /opt/proxysql-api/app.py
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now proxysql-api
 sudo systemctl status proxysql-api</pre>
         </div>
       </div>
     </div>
+
     <div class="step">
-      <div class="sn">04</div>
-      <div class="sb">
-        <h4>Verify it's running</h4>
-        <div class="code-block">
-          <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+      <div class="step-num">08</div>
+      <div class="step-body">
+        <div class="step-title">Verify it's running</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
           <pre>curl http://127.0.0.1:8080/health</pre>
         </div>
       </div>
@@ -457,602 +702,289 @@ sudo systemctl status proxysql-api</pre>
 
 <!-- Config -->
 <section id="config">
-  <h2>Configuration <span class="badge adm-badge">env vars</span></h2>
-  <p>Set these environment variables in the systemd service file <code>/etc/systemd/system/proxysql-api.service</code>:</p>
+  <div class="section-header">
+    <h2>Configuration</h2>
+    <span class="s-badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,.25)">env vars</span>
+  </div>
   <table class="pt">
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td class="pn">PROXYSQL_HOST</td><td><code>127.0.0.1</code></td><td>ProxySQL host</td></tr>
-      <tr><td class="pn">PROXYSQL_MYSQL_PORT</td><td><code>6032</code></td><td>MySQL admin port</td></tr>
-      <tr><td class="pn">PROXYSQL_PG_PORT</td><td><code>6132</code></td><td>PostgreSQL admin port</td></tr>
-      <tr><td class="pn">PROXYSQL_USER</td><td><code>admin</code></td><td>Admin username</td></tr>
-      <tr><td class="pn">PROXYSQL_PASS</td><td><code>admin</code></td><td>Admin password</td></tr>
-      <tr><td class="pn">API_PORT</td><td><code>8080</code></td><td>Port this API listens on</td></tr>
+      <tr><td class="pn">API_HOST</td><td><code>0.0.0.0</code></td><td>Interface to bind the API server</td></tr>
+      <tr><td class="pn">API_PORT</td><td><code>8080</code></td><td>Port the API listens on</td></tr>
+      <tr><td class="pn">PYTHONUNBUFFERED</td><td><code>1</code></td><td>Flush logs immediately to journal</td></tr>
     </tbody>
   </table>
-</section>
 
-<!-- ══ MYSQL SERVERS ══ -->
-<section id="mysql-servers">
-  <h2>MySQL — Servers <span class="badge mysql-badge">MySQL</span></h2>
-
-  <!-- List -->
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/mysql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)" data-curl='curl http://127.0.0.1:8080/mysql/servers'>copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">List all MySQL backend servers (runtime view).</div>
-      <div class="code-block">
-        <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl http://127.0.0.1:8080/mysql/servers</pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- Add -->
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/mysql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Add a MySQL backend server. Changes are immediately loaded to runtime and saved to disk.</div>
-      <div class="code-block">
-        <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X POST http://127.0.0.1:8080/mysql/servers \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "hostgroup_id": 10,
-    "hostname": "192.168.122.199",
-    "port": 3306,
-    "use_ssl": 1,
-    "weight": 1,
-    "max_connections": 1000,
-    "status": "ONLINE",
-    "comment": "MySQL Server 1"
-  }'</span></pre>
-      </div>
-      <table class="pt">
-        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th><th>Notes</th></tr></thead>
-        <tbody>
-          <tr><td class="pn">hostgroup_id</td><td class="pt-type">int</td><td class="pt-req">required</td><td>–</td><td>Routing hostgroup (e.g. 10=write, 20=read)</td></tr>
-          <tr><td class="pn">hostname</td><td class="pt-type">string</td><td class="pt-req">required</td><td>–</td><td>IP or DNS of MySQL server</td></tr>
-          <tr><td class="pn">port</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>3306</td><td>MySQL port</td></tr>
-          <tr><td class="pn">use_ssl</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>0</td><td>1 = enforce SSL</td></tr>
-          <tr><td class="pn">weight</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>1</td><td>Load balancing weight</td></tr>
-          <tr><td class="pn">max_connections</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>1000</td><td>Max backend connections</td></tr>
-          <tr><td class="pn">max_replication_lag</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>0</td><td>Max allowed replication lag (seconds)</td></tr>
-          <tr><td class="pn">status</td><td class="pt-type">string</td><td class="pt-opt">optional</td><td>ONLINE</td><td>ONLINE / SHUNNED / OFFLINE_SOFT / OFFLINE_HARD</td></tr>
-          <tr><td class="pn">comment</td><td class="pt-type">string</td><td class="pt-opt">optional</td><td>""</td><td>Free-text label</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Update -->
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/mysql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Update an existing server. Requires <code>hostname</code> + <code>hostgroup_id</code> to identify it.</div>
-      <div class="code-block">
-        <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/mysql/servers \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"hostgroup_id":10,"hostname":"192.168.122.199","status":"OFFLINE_SOFT"}'</span></pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- Delete -->
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method DELETE">DELETE</span><span class="ep-path">/mysql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Remove a server from a hostgroup.</div>
-      <div class="code-block">
-        <div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X DELETE http://127.0.0.1:8080/mysql/servers \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"hostgroup_id":10,"hostname":"192.168.122.199"}'</span></pre>
-      </div>
-    </div>
+  <div class="info" style="margin-top:14px">
+    <span class="info-icon">ℹ</span>
+    <span>HAProxy reloads are triggered via the admin socket at <code>/run/haproxy/admin.sock</code> using <code>socat</code>. No sudo required — just ensure <code>proxysql-api</code> is in the <code>haproxy</code> group.</span>
   </div>
 </section>
 
-<!-- ══ MYSQL USERS ══ -->
-<section id="mysql-users">
-  <h2>MySQL — Users <span class="badge mysql-badge">MySQL</span></h2>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/mysql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">List all MySQL users (runtime view).</div>
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl http://127.0.0.1:8080/mysql/users</pre></div>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/mysql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Add a MySQL user with routing and SSL settings.</div>
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X POST http://127.0.0.1:8080/mysql/users \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "username": "zii",
-    "password": "password",
-    "default_hostgroup": 10,
-    "use_ssl": 1,
-    "max_connections": 1000,
-    "active": 1
-  }'</span></pre>
-      </div>
-      <table class="pt">
-        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th></tr></thead>
-        <tbody>
-          <tr><td class="pn">username</td><td class="pt-type">string</td><td class="pt-req">required</td><td>–</td></tr>
-          <tr><td class="pn">password</td><td class="pt-type">string</td><td class="pt-req">required</td><td>–</td></tr>
-          <tr><td class="pn">default_hostgroup</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>10</td></tr>
-          <tr><td class="pn">use_ssl</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>0</td></tr>
-          <tr><td class="pn">max_connections</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>1000</td></tr>
-          <tr><td class="pn">active</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>1</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/mysql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Update user settings by username.</div>
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/mysql/users \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"username":"zii","password":"newpass","use_ssl":1}'</span></pre>
-      </div>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method DELETE">DELETE</span><span class="ep-path">/mysql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X DELETE http://127.0.0.1:8080/mysql/users \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"username":"zii"}'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ MYSQL QUERY RULES ══ -->
-<section id="mysql-rules">
-  <h2>MySQL — Query Rules <span class="badge mysql-badge">MySQL</span></h2>
-  <p>Route queries to different hostgroups based on pattern matching or username.</p>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/mysql/query_rules</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Route all SELECT queries to a read hostgroup.</div>
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X POST http://127.0.0.1:8080/mysql/query_rules \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "match_pattern": "^SELECT",
-    "destination_hostgroup": 20,
-    "apply": 1,
-    "comment": "Route SELECTs to readers"
-  }'</span></pre>
-      </div>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method DELETE">DELETE</span><span class="ep-path">/mysql/query_rules/&lt;rule_id&gt;</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X DELETE http://127.0.0.1:8080/mysql/query_rules/1</pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ MYSQL REPLICATION ══ -->
-<section id="mysql-rep">
-  <h2>MySQL — Replication Hostgroups <span class="badge mysql-badge">MySQL</span></h2>
-  <p>Define writer/reader hostgroup pairs for automatic replication-aware routing.</p>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/mysql/replication_hostgroups</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X POST http://127.0.0.1:8080/mysql/replication_hostgroups \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"writer_hostgroup":10,"reader_hostgroup":20,"comment":"Primary/Replica"}'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ MYSQL VARIABLES ══ -->
-<section id="mysql-vars">
-  <h2>MySQL — Variables <span class="badge mysql-badge">MySQL</span></h2>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/mysql/variables</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Set any <code>mysql-*</code> global variable. Common examples:</div>
-      <div class="code-block"><div class="cb-head"><span>bash — connection pool size</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/mysql/variables \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"variable_name":"mysql-max_connections","variable_value":"2048"}'</span></pre>
-      </div>
-      <div class="code-block"><div class="cb-head"><span>bash — monitor credentials</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/mysql/variables \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"variable_name":"mysql-monitor_username","variable_value":"monitor"}'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ MYSQL STATS ══ -->
-<section id="mysql-stats">
-  <h2>MySQL — Stats <span class="badge mysql-badge">MySQL</span></h2>
-  <div class="install-grid">
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/mysql/stats/connection_pool</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="ep-desc">Live connection pool usage per hostgroup/user.</div>
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl http://127.0.0.1:8080/mysql/stats/connection_pool</pre></div>
-      </div>
-    </div>
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/mysql/stats/query_digest</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="ep-desc">Top 20 slowest queries by total execution time.</div>
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl http://127.0.0.1:8080/mysql/stats/query_digest</pre></div>
-      </div>
-    </div>
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/mysql/stats/commands</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="ep-desc">Command counters (SELECT, INSERT, UPDATE …).</div>
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl http://127.0.0.1:8080/mysql/stats/commands</pre></div>
-      </div>
-    </div>
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/mysql/stats/global</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="ep-desc">Global counters (total queries, connections, etc).</div>
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl http://127.0.0.1:8080/mysql/stats/global</pre></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ PGSQL SERVERS ══ -->
-<section id="pgsql-servers">
-  <h2>PostgreSQL — Servers <span class="badge pg-badge">PostgreSQL</span></h2>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/pgsql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="ep-desc">Add a PostgreSQL backend server.</div>
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X POST http://127.0.0.1:8080/pgsql/servers \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "hostgroup_id": 10,
-    "hostname": "192.168.122.138",
-    "port": 5432,
-    "use_ssl": 1,
-    "weight": 1,
-    "max_connections": 1000,
-    "comment": "PgSQL Server 1"
-  }'</span></pre>
-      </div>
-      <table class="pt">
-        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Default</th></tr></thead>
-        <tbody>
-          <tr><td class="pn">hostgroup_id</td><td class="pt-type">int</td><td class="pt-req">required</td><td>–</td></tr>
-          <tr><td class="pn">hostname</td><td class="pt-type">string</td><td class="pt-req">required</td><td>–</td></tr>
-          <tr><td class="pn">port</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>5432</td></tr>
-          <tr><td class="pn">use_ssl</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>0</td></tr>
-          <tr><td class="pn">weight</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>1</td></tr>
-          <tr><td class="pn">max_connections</td><td class="pt-type">int</td><td class="pt-opt">optional</td><td>1000</td></tr>
-          <tr><td class="pn">status</td><td class="pt-type">string</td><td class="pt-opt">optional</td><td>ONLINE</td></tr>
-          <tr><td class="pn">comment</td><td class="pt-type">string</td><td class="pt-opt">optional</td><td>""</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/pgsql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/pgsql/servers \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"hostgroup_id":10,"hostname":"192.168.122.138","status":"OFFLINE_SOFT"}'</span></pre>
-      </div>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method DELETE">DELETE</span><span class="ep-path">/pgsql/servers</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X DELETE http://127.0.0.1:8080/pgsql/servers \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"hostgroup_id":10,"hostname":"192.168.122.138"}'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ PGSQL USERS ══ -->
-<section id="pgsql-users">
-  <h2>PostgreSQL — Users <span class="badge pg-badge">PostgreSQL</span></h2>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/pgsql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X POST http://127.0.0.1:8080/pgsql/users \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "username": "yii",
-    "password": "password",
-    "default_hostgroup": 10,
-    "use_ssl": 1
-  }'</span></pre>
-      </div>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/pgsql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/pgsql/users \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"username":"yii","password":"newpass"}'</span></pre>
-      </div>
-    </div>
-  </div>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method DELETE">DELETE</span><span class="ep-path">/pgsql/users</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X DELETE http://127.0.0.1:8080/pgsql/users \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"username":"yii"}'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ PGSQL MONITOR ══ -->
-<section id="pgsql-monitor">
-  <h2>PostgreSQL — Monitor Config <span class="badge pg-badge">PostgreSQL</span></h2>
-  <p>Configure the credentials and intervals ProxySQL uses to health-check PostgreSQL backends. The monitor user must already exist on your PostgreSQL servers.</p>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/pgsql/monitor</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/pgsql/monitor \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{
-    "monitor_username": "monitor",
-    "monitor_password": "monitor",
-    "connect_interval": 2000,
-    "ping_interval": 2000
-  }'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ PGSQL VARIABLES ══ -->
-<section id="pgsql-vars">
-  <h2>PostgreSQL — Variables <span class="badge pg-badge">PostgreSQL</span></h2>
-
-  <div class="ep-card">
-    <div class="ep-header">
-      <div class="ep-title"><span class="method PUT">PUT</span><span class="ep-path">/pgsql/variables</span></div>
-      <button class="copy-btn" onclick="cp(this)">copy curl</button>
-    </div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl -X PUT http://127.0.0.1:8080/pgsql/variables \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"variable_name":"pgsql-max_connections","variable_value":"1000"}'</span></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ PGSQL STATS ══ -->
-<section id="pgsql-stats">
-  <h2>PostgreSQL — Stats <span class="badge pg-badge">PostgreSQL</span></h2>
-  <div class="install-grid">
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/pgsql/stats/connection_pool</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl http://127.0.0.1:8080/pgsql/stats/connection_pool</pre></div>
-      </div>
-    </div>
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/pgsql/stats/global</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl http://127.0.0.1:8080/pgsql/stats/global</pre></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ ADMIN ══ -->
-<section id="admin-vars">
-  <h2>Admin — Variables <span class="badge adm-badge">Admin</span></h2>
-  <div class="ep-card">
-    <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/admin/variables</span></div></div>
-    <div class="ep-body">
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl http://127.0.0.1:8080/admin/variables</pre></div>
-    </div>
-  </div>
-</section>
-
-<section id="admin-save">
-  <h2>Admin — Save &amp; Load All <span class="badge adm-badge">Admin</span></h2>
-
-  <div class="install-grid">
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/admin/save_all</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="ep-desc">Save all MySQL + PgSQL config to disk (persist across restart).</div>
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl -X POST http://127.0.0.1:8080/admin/save_all</pre></div>
-      </div>
-    </div>
-    <div class="ep-card">
-      <div class="ep-header"><div class="ep-title"><span class="method POST">POST</span><span class="ep-path">/admin/load_all</span></div></div>
-      <div class="ep-body" style="padding:10px 16px">
-        <div class="ep-desc">Load all config from disk to runtime (apply saved state).</div>
-        <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-          <pre>curl -X POST http://127.0.0.1:8080/admin/load_all</pre></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ══ HEALTH ══ -->
+<!-- Health -->
 <section id="health">
-  <h2>Health Check</h2>
-  <div class="ep-card">
-    <div class="ep-header"><div class="ep-title"><span class="method GET">GET</span><span class="ep-path">/health</span></div></div>
+  <div class="section-header">
+    <h2>Health Check</h2>
+  </div>
+
+  <div class="ep">
+    <div class="ep-top">
+      <div class="ep-left">
+        <span class="method GET">GET</span>
+        <span class="ep-path">/health</span>
+        <span class="ep-desc-inline">— Check if the API is running</span>
+      </div>
+      <button class="copy-btn" onclick="cp(this)">copy curl</button>
+    </div>
     <div class="ep-body">
-      <div class="ep-desc">Returns connectivity status to both ProxySQL admin interfaces.</div>
-      <div class="code-block"><div class="cb-head"><span>bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
-        <pre>curl http://127.0.0.1:8080/health</pre></div>
-      <div class="code-block"><div class="cb-head"><span>response</span></div>
+      <div class="cb">
+        <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+        <pre>curl http://127.0.0.1:8080/health</pre>
+      </div>
+      <div class="cb">
+        <div class="cb-top"><span class="cb-lang">response</span></div>
         <pre>{
   <span class="key">"status"</span>: <span class="str">"ok"</span>,
-  <span class="key">"backends"</span>: {
-    <span class="key">"mysql_admin"</span>: <span class="str">"ok"</span>,
-    <span class="key">"pgsql_admin"</span>: <span class="str">"ok"</span>
-  }
+  <span class="key">"message"</span>: <span class="str">"HAProxy config API is healthy"</span>
 }</pre>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ══ ALL ENDPOINTS ══ -->
+<!-- List -->
+<section id="list">
+  <div class="section-header">
+    <h2>List Configs</h2>
+  </div>
+
+  <div class="ep">
+    <div class="ep-top">
+      <div class="ep-left">
+        <span class="method GET">GET</span>
+        <span class="ep-path">/haproxy/configs</span>
+        <span class="ep-desc-inline">— List all active tenant config files</span>
+      </div>
+      <button class="copy-btn" onclick="cp(this)">copy curl</button>
+    </div>
+    <div class="ep-body">
+      <div class="cb">
+        <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+        <pre>curl http://127.0.0.1:8080/haproxy/configs</pre>
+      </div>
+      <div class="cb">
+        <div class="cb-top"><span class="cb-lang">response</span></div>
+        <pre>{
+  <span class="key">"status"</span>: <span class="str">"ok"</span>,
+  <span class="key">"message"</span>: <span class="str">"success"</span>,
+  <span class="key">"data"</span>: [<span class="str">"25010.cfg"</span>, <span class="str">"33061.cfg"</span>]
+}</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Create -->
+<section id="create">
+  <div class="section-header">
+    <h2>Create Config</h2>
+  </div>
+
+  <div class="ep">
+    <div class="ep-top">
+      <div class="ep-left">
+        <span class="method POST">POST</span>
+        <span class="ep-path">/haproxy/config</span>
+        <span class="ep-desc-inline">— Create a TCP proxy config for a port</span>
+      </div>
+      <button class="copy-btn" onclick="cp(this)">copy curl</button>
+    </div>
+    <div class="ep-body">
+      <p style="color:var(--sub);font-size:12px;margin-bottom:10px">Creates a HAProxy frontend+backend config file that proxies the given <code>port</code> to <code>node_ip:3306</code>. HAProxy reloads instantly — the port starts listening with zero downtime.</p>
+
+      <div class="cb">
+        <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+        <pre>curl -X POST http://127.0.0.1:8080/haproxy/config \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "port": 25010,
+    "node_ip": "10.10.107.182"
+  }'</span></pre>
+      </div>
+
+      <table class="pt" style="margin-top:12px">
+        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="pn">port</td>
+            <td class="pt-t">integer</td>
+            <td class="req">REQUIRED</td>
+            <td>TCP port HAProxy will listen on (1–65535). Must be unique per tenant.</td>
+          </tr>
+          <tr>
+            <td class="pn">node_ip</td>
+            <td class="pt-t">string</td>
+            <td class="req">REQUIRED</td>
+            <td>IP address or hostname of the MySQL backend server. HAProxy proxies to this host on port 3306.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="resp-grid" style="margin-top:12px">
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">200 success</span></div>
+          <pre>{
+  <span class="key">"status"</span>: <span class="str">"ok"</span>,
+  <span class="key">"message"</span>: <span class="str">"HAProxy config for port 25010 created and loaded"</span>
+}</pre>
+        </div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">500 error</span></div>
+          <pre>{
+  <span class="key">"status"</span>: <span class="str">"error"</span>,
+  <span class="key">"message"</span>: <span class="str">"HAProxy reload failed, rolled back..."</span>
+}</pre>
+        </div>
+      </div>
+
+      <div class="info">
+        <span class="info-icon">ℹ</span>
+        <span>If HAProxy reload fails after writing the config, the file is automatically rolled back to its previous state (or deleted if it was new). The API never leaves HAProxy in a broken state.</span>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Generated config file — /run/haproxy/tenants/25010.cfg</div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">haproxy config</span></div>
+          <pre><span class="kw">frontend</span> mysql_front_25010
+    <span class="kw">bind</span> *:25010
+    <span class="kw">mode</span> tcp
+    <span class="kw">option</span> tcplog
+    <span class="kw">default_backend</span> sql_user_25010
+
+<span class="kw">backend</span> sql_user_25010
+    <span class="kw">mode</span> tcp
+    <span class="kw">server</span> mysql1 10.10.107.182:3306 check</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Delete -->
+<section id="delete">
+  <div class="section-header">
+    <h2>Delete Config</h2>
+  </div>
+
+  <div class="ep">
+    <div class="ep-top">
+      <div class="ep-left">
+        <span class="method DELETE">DELETE</span>
+        <span class="ep-path">/haproxy/config</span>
+        <span class="ep-desc-inline">— Remove a TCP proxy config by port</span>
+      </div>
+      <button class="copy-btn" onclick="cp(this)">copy curl</button>
+    </div>
+    <div class="ep-body">
+      <p style="color:var(--sub);font-size:12px;margin-bottom:10px">Deletes the config file for the given port and reloads HAProxy. The port immediately stops accepting connections. If reload fails, the file is restored automatically.</p>
+
+      <div class="cb">
+        <div class="cb-top"><span class="cb-lang">bash</span><button class="copy-btn" onclick="cp(this)">copy</button></div>
+        <pre>curl -X DELETE http://127.0.0.1:8080/haproxy/config \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"port": 25010}'</span></pre>
+      </div>
+
+      <table class="pt" style="margin-top:12px">
+        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="pn">port</td>
+            <td class="pt-t">integer</td>
+            <td class="req">REQUIRED</td>
+            <td>The port number of the config to remove.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="resp-grid" style="margin-top:12px">
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">200 success</span></div>
+          <pre>{
+  <span class="key">"status"</span>: <span class="str">"ok"</span>,
+  <span class="key">"message"</span>: <span class="str">"HAProxy config for port 25010 deleted and loaded"</span>
+}</pre>
+        </div>
+        <div class="cb">
+          <div class="cb-top"><span class="cb-lang">404 not found</span></div>
+          <pre>{
+  <span class="key">"status"</span>: <span class="str">"error"</span>,
+  <span class="key">"message"</span>: <span class="str">"No config found for port 25010"</span>
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Responses -->
+<section id="responses">
+  <div class="section-header">
+    <h2>Response Format</h2>
+  </div>
+
+  <p style="color:var(--sub);font-size:12px;margin-bottom:14px">All responses are JSON with a consistent envelope structure.</p>
+
+  <table class="pt">
+    <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td class="pn">status</td><td class="pt-t">string</td><td><code>"ok"</code> or <code>"error"</code></td></tr>
+      <tr><td class="pn">message</td><td class="pt-t">string</td><td>Human-readable result or error description</td></tr>
+      <tr><td class="pn">data</td><td class="pt-t">array</td><td>Present on list endpoints only — array of config filenames</td></tr>
+    </tbody>
+  </table>
+
+  <table class="pt" style="margin-top:14px">
+    <thead><tr><th>HTTP Code</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="pn">200</td><td>Success</td></tr>
+      <tr><td class="pn">400</td><td>Missing required field in request body</td></tr>
+      <tr><td class="pn">404</td><td>Config not found (delete on non-existent port)</td></tr>
+      <tr><td class="pn">500</td><td>HAProxy reload failed — config was automatically rolled back</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- All endpoints -->
 <section id="all-endpoints">
-  <h2>All Endpoints Reference</h2>
-  <table class="ep-table">
+  <div class="section-header">
+    <h2>All Endpoints</h2>
+  </div>
+
+  <table class="all-ep">
     <thead><tr><th>Method</th><th>Path</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/servers</td><td class="desc">List MySQL servers</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/mysql/servers</td><td class="desc">Add MySQL server</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/mysql/servers</td><td class="desc">Update MySQL server</td></tr>
-      <tr><td><span class="method DELETE">DELETE</span></td><td class="path">/mysql/servers</td><td class="desc">Delete MySQL server</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/users</td><td class="desc">List MySQL users</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/mysql/users</td><td class="desc">Add MySQL user</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/mysql/users</td><td class="desc">Update MySQL user</td></tr>
-      <tr><td><span class="method DELETE">DELETE</span></td><td class="path">/mysql/users</td><td class="desc">Delete MySQL user</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/query_rules</td><td class="desc">List query rules</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/mysql/query_rules</td><td class="desc">Add query rule</td></tr>
-      <tr><td><span class="method DELETE">DELETE</span></td><td class="path">/mysql/query_rules/&lt;id&gt;</td><td class="desc">Delete query rule by ID</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/replication_hostgroups</td><td class="desc">List replication hostgroups</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/mysql/replication_hostgroups</td><td class="desc">Add replication hostgroup pair</td></tr>
-      <tr><td><span class="method DELETE">DELETE</span></td><td class="path">/mysql/replication_hostgroups/&lt;hg&gt;</td><td class="desc">Delete replication hostgroup</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/variables</td><td class="desc">List mysql-* variables</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/mysql/variables</td><td class="desc">Set mysql-* variable</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/stats/connection_pool</td><td class="desc">MySQL connection pool stats</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/stats/commands</td><td class="desc">MySQL command counters</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/stats/query_digest</td><td class="desc">MySQL slow query digest (top 20)</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/mysql/stats/global</td><td class="desc">MySQL global stats</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/pgsql/servers</td><td class="desc">List PgSQL servers</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/pgsql/servers</td><td class="desc">Add PgSQL server</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/pgsql/servers</td><td class="desc">Update PgSQL server</td></tr>
-      <tr><td><span class="method DELETE">DELETE</span></td><td class="path">/pgsql/servers</td><td class="desc">Delete PgSQL server</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/pgsql/users</td><td class="desc">List PgSQL users</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/pgsql/users</td><td class="desc">Add PgSQL user</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/pgsql/users</td><td class="desc">Update PgSQL user</td></tr>
-      <tr><td><span class="method DELETE">DELETE</span></td><td class="path">/pgsql/users</td><td class="desc">Delete PgSQL user</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/pgsql/monitor</td><td class="desc">Configure PgSQL monitor credentials</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/pgsql/variables</td><td class="desc">List pgsql-* variables</td></tr>
-      <tr><td><span class="method PUT">PUT</span></td><td class="path">/pgsql/variables</td><td class="desc">Set pgsql-* variable</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/pgsql/stats/connection_pool</td><td class="desc">PgSQL connection pool stats</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/pgsql/stats/global</td><td class="desc">PgSQL global stats</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/admin/variables</td><td class="desc">List admin-* variables</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/admin/save_all</td><td class="desc">Save all config to disk</td></tr>
-      <tr><td><span class="method POST">POST</span></td><td class="path">/admin/load_all</td><td class="desc">Load all config to runtime</td></tr>
-      <tr><td><span class="method GET">GET</span></td><td class="path">/health</td><td class="desc">Health check both admin interfaces</td></tr>
+      <tr>
+        <td><span class="method GET">GET</span></td>
+        <td class="path">/health</td>
+        <td>API health check</td>
+      </tr>
+      <tr>
+        <td><span class="method GET">GET</span></td>
+        <td class="path">/haproxy/configs</td>
+        <td>List all active tenant config files</td>
+      </tr>
+      <tr>
+        <td><span class="method POST">POST</span></td>
+        <td class="path">/haproxy/config</td>
+        <td>Create TCP proxy config for a port → node_ip:3306</td>
+      </tr>
+      <tr>
+        <td><span class="method DELETE">DELETE</span></td>
+        <td class="path">/haproxy/config</td>
+        <td>Delete TCP proxy config and stop listening on port</td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -1062,39 +994,34 @@ sudo systemctl status proxysql-api</pre>
 
 <script>
 function cp(btn) {
-  const block = btn.closest('.code-block');
+  const block = btn.closest('.cb');
   const pre   = block ? block.querySelector('pre') : null;
-  const text  = pre ? pre.innerText : (btn.dataset.curl || '');
-  navigator.clipboard.writeText(text).then(() => {
-    const orig = btn.textContent;
+  const text  = pre ? pre.innerText : '';
+  navigator.clipboard.writeText(text.trim()).then(() => {
     btn.textContent = 'copied ✓';
-    btn.style.color = '#10b981';
-    btn.style.borderColor = '#10b981';
+    btn.classList.add('copied');
     setTimeout(() => {
-      btn.textContent = orig;
-      btn.style.color = '';
-      btn.style.borderColor = '';
+      btn.textContent = 'copy';
+      btn.classList.remove('copied');
     }, 1600);
   });
 }
 
-// Sidebar active link
+// Active nav on scroll
 const sections = document.querySelectorAll('section, .hero');
-const links    = document.querySelectorAll('a.nav-item');
+const links    = document.querySelectorAll('a.nav-link');
+
 const io = new IntersectionObserver(entries => {
   entries.forEach(e => {
     if (e.isIntersecting) {
-      links.forEach(l => l.classList.remove('active','pg-active','adm-active'));
-      const l = document.querySelector(`a.nav-item[href="#${e.target.id}"]`);
-      if (l) {
-        const id = e.target.id;
-        if (id.startsWith('pgsql')) l.classList.add('pg-active');
-        else if (id.startsWith('admin') || id === 'health') l.classList.add('adm-active');
-        else l.classList.add('active');
-      }
+      links.forEach(l => l.classList.remove('active'));
+      const id = e.target.id;
+      const l  = document.querySelector(`a.nav-link[href="#${id}"]`);
+      if (l) l.classList.add('active');
     }
   });
-}, { threshold: 0.25 });
+}, { threshold: 0.3 });
+
 sections.forEach(s => io.observe(s));
 </script>
 </body>

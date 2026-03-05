@@ -1,0 +1,167 @@
+{
+  "info": {
+    "name": "HAProxy Config REST API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Manage HAProxy configs per port with create, delete, list and health endpoints"
+  },
+  "variable": [
+    {
+      "key": "API_HOST",
+      "value": "http://127.0.0.1"
+    },
+    {
+      "key": "API_PORT",
+      "value": "8080"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{API_HOST}}:{{API_PORT}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response is ok', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HAProxy / Configs",
+      "item": [
+        {
+          "name": "List Configs",
+          "request": {
+            "method": "GET",
+            "url": "{{API_HOST}}:{{API_PORT}}/haproxy/configs"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Data is array', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('ok');",
+                  "    pm.expect(json.data).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Config",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{API_HOST}}:{{API_PORT}}/haproxy/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"port\": 25010,\n  \"node_ip\": \"10.10.107.182\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Config created', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('ok');",
+                  "    pm.expect(json.message).to.include('created');",
+                  "});",
+                  "// Save port for use in delete test",
+                  "pm.collectionVariables.set('last_port', 25010);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Config",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{API_HOST}}:{{API_PORT}}/haproxy/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"port\": 25010\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Config deleted', () => {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('ok');",
+                  "    pm.expect(json.message).to.include('deleted');",
+                  "});",
+                  "pm.test('Not found returns 404', () => {",
+                  "    if (pm.response.code === 404) {",
+                  "        const json = pm.response.json();",
+                  "        pm.expect(json.status).to.eql('error');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete Config (Not Found)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{API_HOST}}:{{API_PORT}}/haproxy/config",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"port\": 99999\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Returns 404 for missing config', () => {",
+                  "    pm.response.to.have.status(404);",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('error');",
+                  "    pm.expect(json.message).to.include('No config found');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
