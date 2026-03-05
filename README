@@ -46,12 +46,7 @@ global
     stats socket /run/haproxy-master.sock mode 660 level admin expose-fd listeners
     stats timeout 30s
 
-    # Load tenant configs dynamically
-    conf-dir /run/haproxy/tenants
 ```
-
-> The `conf-dir` directive tells HAProxy to include all `.cfg` files in that directory. `proxy-api` writes one file per tenant port into this directory.
-
 ### Step 2 — Set socket permissions
 
 ```bash
@@ -126,11 +121,15 @@ usermod -aG haproxy proxy-api
 chown proxy-api:haproxy /run/haproxy/tenants
 chmod 775 /run/haproxy/tenants
 
-# Persist directory across reboots (tmpfs is cleared on boot)
-tee /etc/tmpfiles.d/haproxy-tenants.conf > /dev/null <<EOF
-d /run/haproxy/tenants 0775 proxy-api haproxy -
-EOF
-```
+# Check what group haproxy socket has
+ls -la /run/haproxy-master.sock
+
+# Force fix ownership
+chown root:haproxy /run/haproxy-master.sock
+chmod 660 /run/haproxy-master.sock
+
+# Verify
+ls -la /run/haproxy-master.sock
 
 ### Step 6 — Create environment file
 

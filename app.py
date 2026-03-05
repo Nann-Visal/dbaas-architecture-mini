@@ -17,7 +17,7 @@ os.makedirs(TENANTS_DIR, exist_ok=True)
 
 def reload_haproxy():
     result = subprocess.run(
-        ["sh", "-c", "echo 'reload' | socat stdio /run/haproxy-master.sock"],
+        ["sudo", "/bin/systemctl", "reload", "haproxy"],
         capture_output=True,
         text=True,
         timeout=15
@@ -25,7 +25,7 @@ def reload_haproxy():
     if result.returncode != 0:
         error_msg = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(f"Reload failed: {error_msg}")
-    logger.info("HAProxy reloaded successfully via master socket.")
+    logger.info("HAProxy reloaded successfully via systemctl reload.")
 
 def get_filename(port: int):
     return os.path.join(TENANTS_DIR, f"{port}.cfg")
