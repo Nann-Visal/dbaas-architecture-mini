@@ -1,5 +1,24 @@
 # Database Cluster Architecture
-> High Availability Multi-DB Platform — HAProxy + Keepalived + Orchestrator
+> High Availability Multi-DB Platform — HAProxy + Keepalived + MySQL InnoDB Cluster
+> **Version 2.0 — InnoDB Cluster Edition | Replaces Orchestrator + failover.sh**
+
+---
+
+## What Changed from v1
+
+| Item | Before (v1 — Orchestrator) | After (v2 — InnoDB Cluster) |
+|---|---|---|
+| MySQL HA manager | Orchestrator (archived project) | InnoDB Cluster — Oracle-backed ✅ |
+| Failover mechanism | failover.sh + HAProxy socket API | Group Replication consensus — automatic ✅ |
+| Failover time (MySQL) | ~15s | ~5-10s ✅ |
+| Node requirement | 2 nodes minimum | 3 nodes minimum (quorum) |
+| Rejoin failed node | Manual: 5 SQL commands | `cluster.rejoinInstance()` — 1 command ✅ |
+| Promote node | Orchestrator CLI + script | `cluster.setPrimaryInstance()` ✅ |
+| Split-brain protection | Limited | Built-in quorum voting ✅ |
+| Conflict detection | None | Built-in ✅ |
+| Data consistency | Async GTID replication | Virtually synchronous ✅ |
+| Script maintenance | failover.sh + clusters.json | None required ✅ |
+| Long-term support | GitHub archived — no new features | Oracle maintained ✅ |
 
 ---
 
@@ -8,9 +27,9 @@
 ```mermaid
 flowchart TD
     subgraph APPS["🖥️ APPLICATIONS"]
-        A["App A"] 
-        B["App B"] 
-        C["App C"] 
+        A["App A"]
+        B["App B"]
+        C["App C"]
         D["App D"]
     end
 
@@ -21,22 +40,22 @@ flowchart TD
     subgraph HAPROXY["🔀 HAProxy Layer — Active / Passive + No SPOF"]
         subgraph VM1["HAProxy VM 1 — 10.10.78.125  ACTIVE"]
             H1["HAProxy — Traffic Router\nMySQL A :25010  |  MySQL B :25011\nPostgreSQL A :25013  |  PostgreSQL B :25014\nRedis A :25015  |  Redis B :25016\nMongoDB A :25017  |  MongoDB B :25018\nStats :8404"]
-            O1["Orchestrator — MySQL HA\nPort 3000  |  Raft Mode"]
         end
         subgraph VM2["HAProxy VM 2 — 10.10.78.126  PASSIVE"]
             H2["HAProxy — Traffic Router\nMySQL A :25010  |  MySQL B :25011\nPostgreSQL A :25013  |  PostgreSQL B :25014\nRedis A :25015  |  Redis B :25016\nMongoDB A :25017  |  MongoDB B :25018\nStats :8404"]
-            O2["Orchestrator — MySQL HA\nPort 3000  |  Raft Mode"]
         end
     end
 
-    subgraph MYSQL["🐬 MySQL Layer — HA: Orchestrator  |  Failover: ~15s"]
+    subgraph MYSQL["🐬 MySQL Layer — HA: InnoDB Cluster  |  Failover: ~5-10s  |  No Scripts"]
         subgraph MCA["Cluster A — Port 25010"]
             MPA["PRIMARY\n10.10.108.152:3306"]
             MRA["REPLICA\n10.10.100.183:3306"]
+            MRA2["REPLICA\n10.10.100.187:3306 🆕"]
         end
         subgraph MCB["Cluster B — Port 25011"]
             MPB["PRIMARY\n10.10.108.153:3306"]
             MRB["REPLICA\n10.10.100.184:3306"]
+            MRB2["REPLICA\n10.10.100.188:3306 🆕"]
         end
     end
 
@@ -75,7 +94,7 @@ flowchart TD
 
     subgraph MON["📊 Monitoring VM — 10.10.78.140"]
         PR["Prometheus :9090\nmysql_exporter :9104  |  postgres_exporter :9187\nredis_exporter :9121  |  mongodb_exporter :9216  |  haproxy_exporter :9101"]
-        GR["Grafana :3000\nAll DB Dashboards  |  HAProxy Dashboard  |  Replication Lag Alerts"]
+        GR["Grafana :3000\nAll DB Dashboards  |  HAProxy Dashboard  |  InnoDB Cluster Alerts"]
         AL["Alertmanager :9093\nSlack  |  PagerDuty  |  Email"]
     end
 
@@ -86,16 +105,21 @@ flowchart TD
     V -->|"Keepalived routes to ACTIVE"| VM1
     V -.->|"Failover in ~2s if VM1 dies"| VM2
 
-    %% Keepalived + Raft heartbeat
+    %% Keepalived heartbeat
     VM1 <-->|"Keepalived heartbeat"| VM2
-    O1 <-->|"Raft sync"| O2
 
     %% HAProxy to DB layers
     H1 --> MYSQL & PGSQL & REDIS & MONGO
 
-    %% Replication flows
-    MPA -->|"GTID repl"| MRA
-    MPB -->|"GTID repl"| MRB
+    %% MySQL Group Replication
+    MPA <-->|"Group Replication"| MRA
+    MPA <-->|"Group Replication"| MRA2
+    MRA <-->|"Group Replication"| MRA2
+    MPB <-->|"Group Replication"| MRB
+    MPB <-->|"Group Replication"| MRB2
+    MRB <-->|"Group Replication"| MRB2
+
+    %% Other replication
     PPA -->|"streaming repl"| PRA
     PPB -->|"streaming repl"| PRB
     RPA -->|"repl"| RRA
@@ -103,7 +127,7 @@ flowchart TD
     GPA -->|"repl"| GRA
     GPB -->|"repl"| GRB
 
-    %% Metrics to monitoring
+    %% Metrics
     MYSQL & PGSQL & REDIS & MONGO & HAPROXY -->|"metrics scrape"| PR
     PR --> GR --> AL
 ```
@@ -114,10 +138,10 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph MYSQL_FLOW["🐬 MySQL Failover"]
-        M1["Primary DOWN\ndetected 9-15s"] --> M2["Orchestrator\npromotes replica"]
-        M2 --> M3["failover.sh\nHAProxy Runtime API"]
-        M3 --> M4["Traffic →\nnew Primary ✅"]
+    subgraph MYSQL_FLOW["🐬 MySQL Failover — InnoDB Cluster"]
+        M1["Primary DOWN\ndetected ~2s"] --> M2["Group Replication\nquorum vote 2/3"]
+        M2 --> M3["Replica auto-promoted\nno scripts needed"]
+        M3 --> M4["HAProxy mysql-check\ndetects new primary ✅"]
     end
 
     subgraph PGSQL_FLOW["🐘 PostgreSQL Failover"]
@@ -154,16 +178,34 @@ flowchart TD
 
 ---
 
+## MySQL InnoDB Cluster Failover Detail
+
+```mermaid
+flowchart TD
+    F1["Primary DOWN"] --> F2["HAProxy mysql-check fails\ninter 1s fall 2 → ~2s"]
+    F2 --> F3["Group Replication detects\nmember loss"]
+    F3 --> F4["Quorum vote\n2 of 3 nodes agree"]
+    F4 --> F5["New primary elected\nauto — read_only=OFF"]
+    F5 --> F6["HAProxy mysql-check\npasses on new primary"]
+    F6 --> F7["Traffic flows to\nnew primary ✅ ~5-10s total"]
+    F7 --> F8["Old primary recovers"]
+    F8 --> F9["cluster.rejoinInstance()\n1 command — auto GTID sync ✅"]
+```
+
+---
+
 ## Cluster Reference
 
-### MySQL Clusters
+### MySQL Clusters — InnoDB Cluster (3 Nodes)
 
 | Cluster | Role | IP | Port | HA Manager |
 |---|---|---|---|---|
-| Cluster A | Primary | 10.10.108.152 | 3306 | Orchestrator |
-| Cluster A | Replica | 10.10.100.183 | 3306 | Orchestrator |
-| Cluster B | Primary | 10.10.108.153 | 3306 | Orchestrator |
-| Cluster B | Replica | 10.10.100.184 | 3306 | Orchestrator |
+| Cluster A | PRIMARY | 10.10.108.152 | 3306 | InnoDB Cluster (Group Replication) |
+| Cluster A | REPLICA | 10.10.100.183 | 3306 | InnoDB Cluster (Group Replication) |
+| Cluster A | REPLICA 🆕 | 10.10.100.187 | 3306 | InnoDB Cluster (Group Replication) |
+| Cluster B | PRIMARY | 10.10.108.153 | 3306 | InnoDB Cluster (Group Replication) |
+| Cluster B | REPLICA | 10.10.100.184 | 3306 | InnoDB Cluster (Group Replication) |
+| Cluster B | REPLICA 🆕 | 10.10.100.188 | 3306 | InnoDB Cluster (Group Replication) |
 
 ### PostgreSQL Clusters
 
@@ -198,18 +240,18 @@ flowchart TD
 
 | DB Type | Cluster | Port | HA Manager | Health Check |
 |---|---|---|---|---|
-| MySQL | Cluster A | 25010 | Orchestrator | `mysql-check user haproxy_check post-41` |
-| MySQL | Cluster B | 25011 | Orchestrator | `mysql-check user haproxy_check post-41` |
+| MySQL | Cluster A | 25010 | InnoDB Cluster | `mysql-check user haproxy_check post-41` |
+| MySQL | Cluster B | 25011 | InnoDB Cluster | `mysql-check user haproxy_check post-41` |
 | PostgreSQL | Cluster A | 25013 | Patroni | `HTTP :8008/primary → 200 OK` |
 | PostgreSQL | Cluster B | 25014 | Patroni | `HTTP :8008/primary → 200 OK` |
 | Redis | Cluster A | 25015 | Sentinel | `tcp-check role:master` |
 | Redis | Cluster B | 25016 | Sentinel | `tcp-check role:master` |
 | MongoDB | Cluster A | 25017 | ReplicaSet | `HTTP :8009/primary → 200 OK` |
 | MongoDB | Cluster B | 25018 | ReplicaSet | `HTTP :8009/primary → 200 OK` |
-| HAProxy | Stats | 8404 | — | — |
-| Orchestrator | Web UI | 3000 | — | — |
-| Patroni | REST API | 8008 | — | — |
-| Mongo Health | Sidecar | 8009 | — | — |
+| HAProxy | Stats | 8404 | — | Web dashboard |
+| MySQL Shell | Admin | — | mysqlsh CLI | `cluster.status()` |
+| Patroni | REST API | 8008 | — | `GET /primary` |
+| Mongo Health | Sidecar | 8009 | — | `GET /primary` |
 
 ---
 
@@ -217,8 +259,8 @@ flowchart TD
 
 | DB Type | HA Manager | Failover Trigger | Failover Time |
 |---|---|---|---|
-| MySQL | Orchestrator | Auto via hooks → HAProxy Runtime API | ~15s |
-| MariaDB | Orchestrator | Auto via hooks → HAProxy Runtime API | ~15s |
+| MySQL | InnoDB Cluster (Group Repl.) | Auto — Group Replication consensus | ~5-10s |
+| MariaDB | InnoDB Cluster (Group Repl.) | Auto — Group Replication consensus | ~5-10s |
 | PostgreSQL | Patroni | Auto via REST API → HAProxy HTTP check | ~10s |
 | Redis | Sentinel | Auto promotes master → HAProxy tcp-check | ~10s |
 | MongoDB | ReplicaSet | Auto elects primary → HAProxy HTTP check | ~10s |
@@ -279,7 +321,8 @@ frontend stats
     http-request deny   if !trusted_ip
 
 #=====================================================================
-# MYSQL CLUSTERS
+# MYSQL CLUSTERS — InnoDB Cluster (3 nodes, no backup flag)
+# mysql-check routes to PRIMARY only — replicas fail check (read_only=ON)
 #=====================================================================
 
 #---------------------------------------------------------------------
@@ -296,9 +339,10 @@ backend mysql_back_a
     option              tcp-check
     option              mysql-check user haproxy_check post-41
     balance             first
-    default-server      inter 3s rise 2 fall 3 on-marked-down shutdown-sessions
-    server  mysql-primary-a  10.10.108.152:3306  check weight 100
-    server  mysql-replica-a  10.10.100.183:3306  check weight 1 backup
+    default-server      inter 1s rise 1 fall 2 fastinter 500ms on-marked-down shutdown-sessions
+    server  mysql-a1    10.10.108.152:3306  check weight 100
+    server  mysql-a2    10.10.100.183:3306  check weight 50
+    server  mysql-a3    10.10.100.187:3306  check weight 50
 
 #---------------------------------------------------------------------
 # MySQL Cluster B — port 25011
@@ -314,9 +358,10 @@ backend mysql_back_b
     option              tcp-check
     option              mysql-check user haproxy_check post-41
     balance             first
-    default-server      inter 3s rise 2 fall 3 on-marked-down shutdown-sessions
-    server  mysql-primary-b  10.10.108.153:3306  check weight 100
-    server  mysql-replica-b  10.10.100.184:3306  check weight 1 backup
+    default-server      inter 1s rise 1 fall 2 fastinter 500ms on-marked-down shutdown-sessions
+    server  mysql-b1    10.10.108.153:3306  check weight 100
+    server  mysql-b2    10.10.100.184:3306  check weight 50
+    server  mysql-b3    10.10.100.188:3306  check weight 50
 
 #=====================================================================
 # POSTGRESQL CLUSTERS
@@ -493,30 +538,67 @@ vrrp_instance VI_1 {
 
 ---
 
-## Orchestrator Raft Configuration
+## MySQL InnoDB Cluster Setup
 
-```json
-{
-  "RaftEnabled": true,
-  "RaftDataDir": "/var/lib/orchestrator",
-  "RaftBind": "10.10.78.125",
-  "RaftNodes": [
-    "10.10.78.125",
-    "10.10.78.126"
-  ],
-  "DefaultRaftPort": 10008,
-  "MySQLTopologyUser": "orchestrator",
-  "MySQLTopologyPassword": "Orchestrator!2024",
-  "MySQLTopologyPort": 3306,
-  "BackendDB": "sqlite",
-  "SQLite3DataFile": "/var/lib/orchestrator/orchestrator.db",
-  "RecoveryEnabled": true,
-  "RecoverMasterClusterFilters": ["*"],
-  "PostMasterFailoverProcesses": [
-    "/etc/orchestrator/failover.sh {successorHost} {successorPort} {failedHost}"
-  ]
-}
+> Replaces: Orchestrator Raft Configuration
+> Run once per MySQL cluster. Example shown for Cluster A.
+
+### Phase 1 — Install MySQL Server + MySQL Shell (All 3 Nodes)
+
+```bash
+sudo apt update && sudo apt install -y mysql-server mysql-shell
+sudo systemctl enable mysql && sudo systemctl start mysql
 ```
+
+### Phase 2 — Configure Each Node via MySQL Shell
+
+```bash
+# Run on EACH of the 3 nodes individually
+mysqlsh
+dba.configureLocalInstance('root@localhost:3306')
+# Select option 2 — create clusteradmin account
+# Set password: ClusterAdmin!2024
+# Allow config changes and restart
+```
+
+### Phase 3 — Create Cluster and Add Nodes (on mysql-a1 only)
+
+```bash
+mysqlsh --user clusteradmin --host 10.10.108.152
+
+var cluster = dba.createCluster('mysql_cluster_a')
+
+cluster.addInstance('clusteradmin@10.10.100.183:3306')
+# Choose: Clone — syncs data from primary automatically
+
+cluster.addInstance('clusteradmin@10.10.100.187:3306')
+# Choose: Clone
+
+# Verify — all 3 nodes must show ONLINE
+cluster.status()
+```
+
+### Phase 4 — Create HAProxy Health Check User (Primary Node)
+
+```sql
+sudo mysql
+CREATE USER 'haproxy_check'@'%' IDENTIFIED WITH mysql_native_password BY '';
+GRANT USAGE ON *.* TO 'haproxy_check'@'%';
+FLUSH PRIVILEGES;
+```
+
+### Daily Operations
+
+| Task | Command |
+|---|---|
+| Check cluster status | `cluster.status()` |
+| Promote specific node | `cluster.setPrimaryInstance('10.10.100.183:3306')` |
+| Rejoin failed node | `cluster.rejoinInstance('10.10.108.152:3306')` |
+| Add new node | `cluster.addInstance('clusteradmin@<ip>:3306')` |
+| Remove node | `cluster.removeInstance('<ip>:3306')` |
+| Full outage recovery | `dba.rebootClusterFromCompleteOutage('mysql_cluster_a')` |
+| Connect MySQL Shell | `mysqlsh --user clusteradmin --host 10.10.108.152` |
+| Get cluster object | `var cluster = dba.getCluster('mysql_cluster_a')` |
 
 ---
 
@@ -578,7 +660,7 @@ sudo systemctl reload haproxy
 ```mermaid
 flowchart LR
     subgraph DB_NODES["📦 DB Nodes — Exporters"]
-        E1["mysql_exporter :9104"]
+        E1["mysql_exporter :9104\n+ Group Replication collectors"]
         E2["postgres_exporter :9187"]
         E3["redis_exporter :9121"]
         E4["mongodb_exporter :9216"]
@@ -587,7 +669,7 @@ flowchart LR
 
     subgraph MON["📊 Monitoring VM 10.10.78.140"]
         P["Prometheus :9090\nScrapes all exporters every 15s"]
-        G["Grafana :3000\nDashboards per DB type"]
+        G["Grafana :3000\nDashboards per DB type + InnoDB Cluster"]
         AM["Alertmanager :9093\nRoutes alerts to channels"]
     end
 
@@ -603,37 +685,72 @@ flowchart LR
     AM --> S & PD & EM
 ```
 
+### mysql_exporter — InnoDB Cluster Flags
+
+```bash
+mysql_exporter \
+  --collect.perf_schema.replication_group_members \
+  --collect.perf_schema.replication_group_member_stats \
+  --collect.perf_schema.replication_applier_status_by_worker \
+  --collect.info_schema.innodb_metrics \
+  --collect.global_status \
+  --collect.global_variables \
+  --web.listen-address=":9104"
+```
+
+### InnoDB Cluster Alert Rules
+
+| Alert | Condition | Severity |
+|---|---|---|
+| MySQLMemberOffline | `member_state != ONLINE` | Critical |
+| MySQLTransactionBacklog | `transactions_in_queue > 100` for 1m | Warning |
+| MySQLConflictDetected | `count_conflicts_detected` increases | Warning |
+| MySQLNoFaultTolerance | ONLINE members < 2 | Critical |
+| MySQLPrimaryChanged | `primary_member` value changes | Info |
+| MySQLClusterDegraded | cluster status != OK | Critical |
+
 ---
 
 ## Production Readiness Checklist
 
 | Component | Status | Notes |
 |---|---|---|
-| HAProxy Active/Passive | ✅ | Keepalived VIP |
-| HAProxy tunnel timeout | ✅ | `timeout tunnel 3600s` added |
-| MySQL HA | ✅ | Orchestrator + Raft |
-| PostgreSQL HA | ✅ | Patroni + HTTP check |
-| Redis HA | ✅ | Sentinel + notify script |
-| MongoDB HA | ✅ | ReplicaSet + sidecar HTTP check |
-| No SPOF on proxy layer | ✅ | 2x HAProxy + Keepalived |
-| No SPOF on HA manager | ✅ | Orchestrator Raft on both VMs |
-| Monitoring isolated | ✅ | Separate VM |
-| Metrics per DB type | ✅ | 5 exporters |
-| Alerts configured | ✅ | Slack / PagerDuty / Email |
+| HAProxy Active/Passive | ✅ | Keepalived VIP — unchanged |
+| HAProxy tunnel timeout | ✅ | `timeout tunnel 3600s` — unchanged |
+| MySQL HA — InnoDB Cluster 3 nodes | ✅ | Group Replication replaces Orchestrator |
+| MySQL auto-failover — no scripts | ✅ | Built-in consensus — failover.sh removed |
+| MySQL rejoin — one command | ✅ | `cluster.rejoinInstance()` |
+| MySQL promote — one command | ✅ | `cluster.setPrimaryInstance()` |
+| MySQL split-brain protection | ✅ | Quorum voting — 2 of 3 nodes required |
+| MySQL conflict detection | ✅ | Built-in Group Replication feature |
+| PostgreSQL HA | ✅ | Patroni + HTTP check — unchanged |
+| Redis HA | ✅ | Sentinel + notify script — unchanged |
+| MongoDB HA | ✅ | ReplicaSet + sidecar HTTP check — unchanged |
+| No SPOF on proxy layer | ✅ | 2x HAProxy + Keepalived — unchanged |
+| No custom failover scripts (MySQL) | ✅ | Orchestrator + failover.sh eliminated |
+| Group Replication metrics | 🆕 | member state, queue depth, conflict count |
+| InnoDB-specific alerts | 🆕 | 6 new alert rules added |
+| Monitoring isolated VM | ✅ | 10.10.78.140 — unchanged |
+| Alerts configured | ✅ | Alertmanager → Slack / PagerDuty / Email |
+| DBaaS provisioning | ✅ | mysqlsh + haproxy.cfg only — no scripts |
 
 ---
 
 ## Summary
 
 ```
-✅ Single VIP entry point       — apps connect to one IP always
-✅ HAProxy Active/Passive       — no proxy SPOF via Keepalived
-✅ Separate port per cluster    — full traffic isolation
-✅ Correct HA tool per DB type  — Orchestrator / Patroni / Sentinel / ReplicaSet
-✅ Correct health check per DB  — mysql-check / HTTP check / tcp-check role:master
-✅ Auto failover all DB types   — zero manual intervention
-✅ Zero cross-cluster impact    — cluster A down = others unaffected
-✅ Monitoring per DB type       — Prometheus exporters + Grafana
-✅ Alerting                     — Alertmanager → Slack / PagerDuty / Email
-✅ Scalable                     — add new cluster = add frontend/backend block only
+✅ Single VIP entry point         — apps connect to one IP always
+✅ HAProxy Active/Passive         — no proxy SPOF via Keepalived
+✅ Separate port per cluster      — full traffic isolation
+✅ Correct HA tool per DB type    — InnoDB Cluster / Patroni / Sentinel / ReplicaSet
+✅ Correct health check per DB    — mysql-check / HTTP check / tcp-check role:master
+✅ Auto failover all DB types     — zero manual intervention
+✅ MySQL failover — no scripts    — Group Replication built-in consensus
+✅ MySQL rejoin/promote           — cluster.rejoinInstance() / setPrimaryInstance()
+✅ Zero cross-cluster impact      — cluster A down = others unaffected
+✅ Monitoring per DB type         — Prometheus exporters + Grafana
+✅ InnoDB Group Replication       — conflict detection, member state, queue depth
+✅ Alerting                       — Alertmanager → Slack / PagerDuty / Email
+✅ Scalable DBaaS provisioning    — add cluster = mysqlsh + haproxy.cfg only
+✅ Long-term maintainability      — Oracle-backed InnoDB, no archived dependencies
 ```
